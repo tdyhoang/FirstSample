@@ -42,7 +42,7 @@ WARNING: This one file example has a hell LOT of *sinful* programming practices
 
 constexpr auto WINDOW_CLASS_NAME = L"SampleWindow";
 constexpr auto WINDOW_TITLE = L"00 - Intro";
-#define WINDOW_ICON_PATH L"brick.ico" 
+constexpr auto WINDOW_ICON_PATH = L"brick.ico";
 
 HWND hWnd = 0;
 
@@ -52,37 +52,35 @@ HWND hWnd = 0;
 constexpr auto WINDOW_WIDTH = 640;
 constexpr auto WINDOW_HEIGHT = 480;
 
-#define MAX_FRAME_RATE 100
+constexpr auto MAX_FRAME_RATE = 100;
 
-ID3D10Device* pD3DDevice = NULL;
-IDXGISwapChain* pSwapChain = NULL;
-ID3D10RenderTargetView* pRenderTargetView = NULL;
+ID3D10Device* pD3DDevice = nullptr;
+IDXGISwapChain* pSwapChain = nullptr;
+ID3D10RenderTargetView* pRenderTargetView = nullptr;
 
 int BackBufferWidth = 0;
 int BackBufferHeight = 0;
 
-constexpr auto TEXTURE_PATH_BRICK = L"poolball.png";
-constexpr float BRICK_START_X = 320;
-constexpr float BRICK_START_Y = 200;
 
-constexpr float BRICK_WIDTH = 16;
-constexpr float BRICK_HEIGHT = 16;
+ID3DX10Sprite* spriteObject = nullptr;				// Sprite handling object 
 
-
-ID3D10Texture2D* texBrick = NULL;				// Texture object to store brick image
-ID3DX10Sprite* spriteObject = NULL;				// Sprite handling object 
-
-D3DX10_SPRITE spriteBrick;
 
 class Ball {
 public:
-	float x, y, vx, vy;
+	float x, y, vx, vy, width, height;
+	wchar_t* texture_path;
+	ID3D10Texture2D* texture;						// Texture object to store brick image
+	D3DX10_SPRITE sprite;
 	Ball()
 	{
 		x = rand() / static_cast<float>(52);
 		y = rand() / static_cast<float>(69);
-		vx = rand() / static_cast<float>(50000) - 0.32767;
-		vy = rand() / static_cast<float>(50000) - 0.32767;
+		vx = rand() / static_cast<double>(50000) - 0.32767;
+		vy = rand() / static_cast<double>(50000) - 0.32767;
+		width = 16;
+		height = 16;
+		texture_path = (wchar_t*)L"poolball.png";
+		texture = nullptr;
 	}
 };
 
@@ -275,71 +273,74 @@ void InitDirectX(HWND hWnd)
 */
 void LoadResources()
 {
-	ID3D10Resource* pD3D10Resource = NULL;
-
-	// Loads the texture into a temporary ID3D10Resource object
-	HRESULT hr = D3DX10CreateTextureFromFile(pD3DDevice,
-		TEXTURE_PATH_BRICK,
-		NULL,
-		NULL,
-		&pD3D10Resource,
-		NULL);
-
-	// Make sure the texture was loaded successfully
-	if (FAILED(hr))
+	for (Ball ball : balls)
 	{
-		DebugOut((wchar_t*)L"[ERROR] Failed to load texture file: %s \n", TEXTURE_PATH_BRICK);
-		return;
+		ID3D10Resource* pD3D10Resource = NULL;
+
+		// Loads the texture into a temporary ID3D10Resource object
+		HRESULT hr = D3DX10CreateTextureFromFile(pD3DDevice,
+			ball.texture_path,
+			NULL,
+			NULL,
+			&pD3D10Resource,
+			NULL);
+
+		// Make sure the texture was loaded successfully
+		if (FAILED(hr))
+		{
+			DebugOut((wchar_t*)L"[ERROR] Failed to load texture file: %s \n", ball.texture_path);
+			return;
+		}
+
+		// Translates the ID3D10Resource object into a ID3D10Texture2D object
+		pD3D10Resource->QueryInterface(__uuidof(ID3D10Texture2D), (LPVOID*)&ball.texture);
+		pD3D10Resource->Release();
+
+		if (!ball.texture) {
+			DebugOut((wchar_t*)L"[ERROR] Failed to convert from ID3D10Resource to ID3D10Texture2D \n");
+			return;
+		}
+
+		// Get the texture details
+		D3D10_TEXTURE2D_DESC desc;
+		ball.texture->GetDesc(&desc);
+
+		// Create a shader resource view of the texture
+		D3D10_SHADER_RESOURCE_VIEW_DESC SRVDesc;
+
+		// Clear out the shader resource view description structure
+		ZeroMemory(&SRVDesc, sizeof(SRVDesc));
+
+		// Set the texture format
+		SRVDesc.Format = desc.Format;
+		// Set the type of resource
+		SRVDesc.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE2D;
+		SRVDesc.Texture2D.MipLevels = desc.MipLevels;
+
+		ID3D10ShaderResourceView* gSpriteTextureRV = NULL;
+
+		pD3DDevice->CreateShaderResourceView(ball.texture, &SRVDesc, &gSpriteTextureRV);
+
+		// Set the sprite’s shader resource view
+		ball.sprite.pTexture = gSpriteTextureRV;
+
+		// top-left location in U,V coords
+		ball.sprite.TexCoord.x = 0;
+		ball.sprite.TexCoord.y = 0;
+
+		// Determine the texture size in U,V coords
+		ball.sprite.TexSize.x = 1.0f;
+		ball.sprite.TexSize.y = 1.0f;
+
+		// Set the texture index. Single textures will use 0
+		ball.sprite.TextureIndex = 0;
+
+		// The color to apply to this sprite, full color applies white.
+		ball.sprite.ColorModulate = D3DXCOLOR(1.0f, 1.0f, 1.0f, 1.0f);
+
+
+		DebugOut((wchar_t*)L"[INFO] Texture loaded Ok: %s \n", ball.texture_path);
 	}
-
-	// Translates the ID3D10Resource object into a ID3D10Texture2D object
-	pD3D10Resource->QueryInterface(__uuidof(ID3D10Texture2D), (LPVOID*)&texBrick);
-	pD3D10Resource->Release();
-
-	if (!texBrick) {
-		DebugOut((wchar_t*)L"[ERROR] Failed to convert from ID3D10Resource to ID3D10Texture2D \n");
-		return;
-	}
-
-	// Get the texture details
-	D3D10_TEXTURE2D_DESC desc;
-	texBrick->GetDesc(&desc);
-
-	// Create a shader resource view of the texture
-	D3D10_SHADER_RESOURCE_VIEW_DESC SRVDesc;
-
-	// Clear out the shader resource view description structure
-	ZeroMemory(&SRVDesc, sizeof(SRVDesc));
-
-	// Set the texture format
-	SRVDesc.Format = desc.Format;
-	// Set the type of resource
-	SRVDesc.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE2D;
-	SRVDesc.Texture2D.MipLevels = desc.MipLevels;
-
-	ID3D10ShaderResourceView* gSpriteTextureRV = NULL;
-
-	pD3DDevice->CreateShaderResourceView(texBrick, &SRVDesc, &gSpriteTextureRV);
-
-	// Set the sprite’s shader resource view
-	spriteBrick.pTexture = gSpriteTextureRV;
-
-	// top-left location in U,V coords
-	spriteBrick.TexCoord.x = 0;
-	spriteBrick.TexCoord.y = 0;
-
-	// Determine the texture size in U,V coords
-	spriteBrick.TexSize.x = 1.0f;
-	spriteBrick.TexSize.y = 1.0f;
-
-	// Set the texture index. Single textures will use 0
-	spriteBrick.TextureIndex = 0;
-
-	// The color to apply to this sprite, full color applies white.
-	spriteBrick.ColorModulate = D3DXCOLOR(1.0f, 1.0f, 1.0f, 1.0f);
-
-
-	DebugOut((wchar_t*)L"[INFO] Texture loaded Ok: %s \n", TEXTURE_PATH_BRICK);
 }
 
 /*
@@ -350,15 +351,15 @@ void LoadResources()
 */
 void Update(DWORD dt)
 {
-	//Uncomment the whole function to see the brick moves and bounces back when hitting left and right edges
+	for (Ball ball : balls)
+	{
+		//Uncomment the whole function to see the brick moves and bounces back when hitting left and right edges
 	//ball.x++;
 
 	// NOTE: BackBufferWidth is indeed related to rendering!!
-	float bottom_edge = BackBufferHeight - BRICK_HEIGHT;
-	float right_edge = BackBufferWidth - BRICK_WIDTH;
+		float bottom_edge = BackBufferHeight - ball.height;
+		float right_edge = BackBufferWidth - ball.width;
 
-	for (Ball ball : balls)
-	{
 		ball.x += ball.vx * dt;
 		ball.y += ball.vy * dt;
 
@@ -398,13 +399,13 @@ void Update(DWORD dt)
 */
 void Render()
 {
-	for (Ball ball : balls)
+	if (pD3DDevice != NULL)
 	{
-		if (pD3DDevice != NULL)
-		{
-			// clear the target buffer
-			pD3DDevice->ClearRenderTargetView(pRenderTargetView, BACKGROUND_COLOR);
+		// clear the target buffer
+		pD3DDevice->ClearRenderTargetView(pRenderTargetView, BACKGROUND_COLOR);
 
+		for (Ball ball : balls)
+		{
 			// start drawing the sprites
 			spriteObject->Begin(D3DX10_SPRITE_SORT_TEXTURE);
 
@@ -415,21 +416,21 @@ void Render()
 
 			// Scale the sprite to its correct width and height
 			D3DXMATRIX matScaling;
-			D3DXMatrixScaling(&matScaling, BRICK_WIDTH, BRICK_HEIGHT, 1.0f);
+			D3DXMatrixScaling(&matScaling, ball.width, ball.height, 1.0f);
 
 			// Setting the sprite’s position and size
-			spriteBrick.matWorld = (matScaling * matTranslation);
+			ball.sprite.matWorld = (matScaling * matTranslation);
 
-			spriteObject->DrawSpritesImmediate(&spriteBrick, 1, 0, 0);
+			spriteObject->DrawSpritesImmediate(&ball.sprite, 1, 0, 0);
 
 			// Finish up and send the sprites to the hardware
 			spriteObject->End();
-
-			//DebugOutTitle((wchar_t*)L"%s (%0.1f,%0.1f) v:%0.1f", WINDOW_TITLE, ball.x, ball.y, ball.vx);
-
-			// display the next item in the swap chain
-			pSwapChain->Present(0, 0);
 		}
+
+		//DebugOutTitle((wchar_t*)L"%s (%0.1f,%0.1f) v:%0.1f", WINDOW_TITLE, ball.x, ball.y, ball.vx);
+
+		// display the next item in the swap chain
+		pSwapChain->Present(0, 0);
 	}
 }
 
@@ -558,7 +559,7 @@ int WINAPI WinMain(
 
 	InitDirectX(hWnd);
 
-	srand(time(NULL));
+	srand(time(nullptr));
 	for (int i = 0; i < 8; i++)
 		balls.push_back(Ball());
 
