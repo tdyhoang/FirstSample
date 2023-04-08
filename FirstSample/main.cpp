@@ -31,7 +31,7 @@ WARNING: This one file example has a hell LOT of *sinful* programming practices
 #include <d3dx10.h>
 
 #include <signal.h>
-#include <string.h>
+#include <string>
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
@@ -68,18 +68,18 @@ ID3DX10Sprite* spriteObject = nullptr;				// Sprite handling object
 class Ball {
 public:
 	float x, y, vx, vy, width, height;
-	wchar_t* texture_path;
+	std::wstring texture_path;
 	ID3D10Texture2D* texture;						// Texture object to store brick image
 	D3DX10_SPRITE sprite;
-	Ball()
+	Ball(int index)
 	{
 		x = rand() / static_cast<float>(52);
 		y = rand() / static_cast<float>(69);
-		vx = rand() / static_cast<double>(50000) - 0.32767;
-		vy = rand() / static_cast<double>(50000) - 0.32767;
+		vx = rand() / static_cast<float>(32767) - 0.5;
+		vy = rand() / static_cast<float>(32767) - 0.5;
 		width = 16;
 		height = 16;
-		texture_path = (wchar_t*)L"poolball.png";
+		texture_path = L"billiard-ball (" + std::to_wstring(index) + L").png";
 		texture = nullptr;
 	}
 };
@@ -273,13 +273,13 @@ void InitDirectX(HWND hWnd)
 */
 void LoadResources()
 {
-	for (Ball ball : balls)
+	for (Ball& ball : balls)
 	{
 		ID3D10Resource* pD3D10Resource = NULL;
 
 		// Loads the texture into a temporary ID3D10Resource object
 		HRESULT hr = D3DX10CreateTextureFromFile(pD3DDevice,
-			ball.texture_path,
+			ball.texture_path.c_str(),
 			NULL,
 			NULL,
 			&pD3D10Resource,
@@ -351,19 +351,15 @@ void LoadResources()
 */
 void Update(DWORD dt)
 {
-	for (Ball ball : balls)
+	for (Ball& ball : balls)
 	{
 		//Uncomment the whole function to see the brick moves and bounces back when hitting left and right edges
-	//ball.x++;
 
 	// NOTE: BackBufferWidth is indeed related to rendering!!
 		float bottom_edge = BackBufferHeight - ball.height;
 		float right_edge = BackBufferWidth - ball.width;
 
-		ball.x += ball.vx * dt;
-		ball.y += ball.vy * dt;
-
-		if (ball.x < 0 || ball.x > right_edge) {
+		if (ball.x <= 0 || ball.x >= right_edge) {
 
 			ball.vx = -ball.vx;
 
@@ -377,7 +373,7 @@ void Update(DWORD dt)
 			}
 		}
 
-		if (ball.y < 0 || ball.y > bottom_edge) {
+		if (ball.y <= 0 || ball.y >= bottom_edge) {
 
 			ball.vy = -ball.vy;
 
@@ -390,6 +386,9 @@ void Update(DWORD dt)
 				ball.y = bottom_edge;
 			}
 		}
+
+		ball.x += ball.vx * dt;
+		ball.y += ball.vy * dt;
 	}
 }
 
@@ -404,11 +403,11 @@ void Render()
 		// clear the target buffer
 		pD3DDevice->ClearRenderTargetView(pRenderTargetView, BACKGROUND_COLOR);
 
-		for (Ball ball : balls)
-		{
-			// start drawing the sprites
-			spriteObject->Begin(D3DX10_SPRITE_SORT_TEXTURE);
+		// start drawing the sprites
+		spriteObject->Begin(D3DX10_SPRITE_SORT_TEXTURE);
 
+		for (Ball& ball : balls)
+		{
 			// The translation matrix to be created
 			D3DXMATRIX matTranslation;
 			// Create the translation matrix
@@ -422,10 +421,10 @@ void Render()
 			ball.sprite.matWorld = (matScaling * matTranslation);
 
 			spriteObject->DrawSpritesImmediate(&ball.sprite, 1, 0, 0);
-
-			// Finish up and send the sprites to the hardware
-			spriteObject->End();
 		}
+
+		// Finish up and send the sprites to the hardware
+		spriteObject->End();
 
 		//DebugOutTitle((wchar_t*)L"%s (%0.1f,%0.1f) v:%0.1f", WINDOW_TITLE, ball.x, ball.y, ball.vx);
 
@@ -561,7 +560,7 @@ int WINAPI WinMain(
 
 	srand(time(nullptr));
 	for (int i = 0; i < 8; i++)
-		balls.push_back(Ball());
+		balls.push_back(Ball(i + 1));
 
 	LoadResources();
 	Run();
